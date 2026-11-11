@@ -41,9 +41,9 @@ const PacienteDetalle: React.FC<PacienteDetailProps> = ({ paciente, onBack }) =>
   const [errorAntecedentes, setErrorAntecedentes] = useState(false);
   const [descargando, setDescargando] = useState(false);
   const [detalle, setDetalle] = useState<Paciente | null>(null);
-  const [consultas, setConsultas] = useState<ConsultaCompleta[]>([]);
+  const [consultas, setConsultas] = useState<ConsultaCompleta[] | null>(null);
+  const [consultasError, setConsultasError] = useState(false);
   const [loading, setLoading] = useState<boolean>(true);
-  const [consultasLoading, setConsultasLoading] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'info' | 'consultas' | 'antecedentes'>('info');
   const [editMode, setEditMode] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
@@ -102,29 +102,19 @@ const PacienteDetalle: React.FC<PacienteDetailProps> = ({ paciente, onBack }) =>
     }
   };
 
-  const loadConsultas = useCallback(async (): Promise<void> => {
-    try {
-      setConsultasLoading(true);
-      const response = await consultaService.obtenerConsultasPorPaciente(paciente.DNI);
-      setConsultas(response.consultas || []);
-    } catch (error: unknown) {
-      const apiError = error as ApiError;
-      console.error('Error loading consultations:', apiError);
-      setConsultas([]);
-    } finally {
-      setConsultasLoading(false);
-    }
-  }, [paciente.DNI]);
-
   useEffect(() => {
     loadDetalleCompleto();
   }, [loadDetalleCompleto]);
 
   useEffect(() => {
-    if (activeTab === 'consultas') {
-      loadConsultas();
-    }
-  }, [activeTab, loadConsultas]);
+    let vigente = true;
+    setConsultas(null);
+    setConsultasError(false);
+    consultaService.obtenerConsultasPorPaciente(paciente.DNI)
+      .then(response => { if (vigente) setConsultas(response.consultas); })
+      .catch(() => { if (vigente) setConsultasError(true); });
+    return () => { vigente = false; };
+  }, [paciente.DNI]);
 
   const handleSaveEdit = async (data: CreatePacienteData): Promise<void> => {
     try {
@@ -282,7 +272,7 @@ const PacienteDetalle: React.FC<PacienteDetailProps> = ({ paciente, onBack }) =>
                 onClick={() => setActiveTab('consultas')}
                 className={`tab-button ${activeTab === 'consultas' ? 'active' : ''}`}
               >
-                Historial de Consultas ({consultas.length})
+                Historial de Consultas{consultas && ` (${consultas.length})`}
               </button>
               {puedeVerHistoria && (
                 <button type="button" onClick={() => setActiveTab('antecedentes')}
@@ -388,7 +378,9 @@ const PacienteDetalle: React.FC<PacienteDetailProps> = ({ paciente, onBack }) =>
 
             {activeTab === 'consultas' && (
               <div className="consultas-section">
-                {consultasLoading ? (
+                {consultasError ? (
+                  <p role="alert">No se pudo cargar el historial de consultas.</p>
+                ) : consultas === null ? (
                   <div className="skeleton-pulse">
                     <div className="skeleton-header w-1/3 mb-4"></div>
                     {[...Array(3)].map((_, i) => (
