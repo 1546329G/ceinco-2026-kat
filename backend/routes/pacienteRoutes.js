@@ -42,8 +42,8 @@ router.get('/:dni/historia',
 );
 
 // Generar PDF
-router.get('/:dni/pdf', 
-    verifyRole([ROLES.ADMIN, ROLES.DOCTOR]), 
+router.get('/:dni/pdf',
+    (req, res, next) => verifyRole(req.query.seccion === 'antecedentes' ? DOCTOR : ALL_CLINICAL)(req, res, next),
     pacienteController.generatePDF
 );
 

@@ -36,7 +36,7 @@ interface ApiError {
 
 const PacienteDetalle: React.FC<PacienteDetailProps> = ({ paciente, onBack }) => {
   const { cargo } = useAuth();
-  const puedeVerHistoria = cargo === 'administrador' || cargo === 'doctor';
+  const puedeVerAntecedentes = cargo === 'administrador' || cargo === 'doctor';
   const [antecedentes, setAntecedentes] = useState<Array<{ nombre: string; valor: string }> | null>(null);
   const [errorAntecedentes, setErrorAntecedentes] = useState(false);
   const [descargando, setDescargando] = useState(false);
@@ -75,7 +75,7 @@ const PacienteDetalle: React.FC<PacienteDetailProps> = ({ paciente, onBack }) =>
   }, [paciente.DNI, mostrarAlert]);
 
   useEffect(() => {
-    if (activeTab !== 'antecedentes' || !puedeVerHistoria) return;
+    if (activeTab !== 'antecedentes' || !puedeVerAntecedentes) return;
     let vigente = true;
     setAntecedentes(null);
     setErrorAntecedentes(false);
@@ -83,7 +83,7 @@ const PacienteDetalle: React.FC<PacienteDetailProps> = ({ paciente, onBack }) =>
       .then(campos => { if (vigente) setAntecedentes(campos); })
       .catch(() => { if (vigente) setErrorAntecedentes(true); });
     return () => { vigente = false; };
-  }, [activeTab, paciente.DNI, puedeVerHistoria]);
+  }, [activeTab, paciente.DNI, puedeVerAntecedentes]);
 
   const descargarPDF = async (soloAntecedentes: boolean) => {
     setDescargando(true);
@@ -219,7 +219,7 @@ const PacienteDetalle: React.FC<PacienteDetailProps> = ({ paciente, onBack }) =>
             </div>
           </div>
           <div className="detail-header-actions">
-            {!editMode && puedeVerHistoria && (
+            {!editMode && (puedeVerAntecedentes || cargo === 'asistente') && (
               <button type="button" className="btn btn-secondary" disabled={descargando}
                 onClick={() => descargarPDF(false)}>Descargar historia clínica</button>
             )}
@@ -274,7 +274,7 @@ const PacienteDetalle: React.FC<PacienteDetailProps> = ({ paciente, onBack }) =>
               >
                 Historial de Consultas{consultas && ` (${consultas.length})`}
               </button>
-              {puedeVerHistoria && (
+              {puedeVerAntecedentes && (
                 <button type="button" onClick={() => setActiveTab('antecedentes')}
                   className={`tab-button ${activeTab === 'antecedentes' ? 'active' : ''}`}>
                   Antecedentes
@@ -354,7 +354,7 @@ const PacienteDetalle: React.FC<PacienteDetailProps> = ({ paciente, onBack }) =>
               </div>
             )}
 
-            {activeTab === 'antecedentes' && puedeVerHistoria && (
+            {activeTab === 'antecedentes' && puedeVerAntecedentes && (
               <section className="info-section">
                 <h3 className="section-header">Antecedentes clínicos</h3>
                 {errorAntecedentes && <p role="alert">No se pudieron cargar los antecedentes.</p>}
