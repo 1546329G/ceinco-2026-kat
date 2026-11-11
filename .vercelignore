@@ -1,0 +1,7 @@
+.ceinco-runtime/
+.vercel/
+**/.git/
+**/.env*
+**/node_modules/
+H_CLINICA/dist/
+backend/uploads/

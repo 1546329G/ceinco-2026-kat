@@ -1,0 +1,18 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "npm ci --prefix backend --omit=dev --no-audit --no-fund && npm ci --prefix H_CLINICA --include=dev --no-audit --no-fund",
+  "buildCommand": "npm run build",
+  "outputDirectory": "H_CLINICA/dist",
+  "regions": ["cle1"],
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api/ceinco?__ceinco_path=:path" },
+    { "source": "/:page(login|dashboard|pacientes|citas|consulta|reporte|usuario|perfil)", "destination": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/api/:path*",
+      "headers": [{ "key": "Cache-Control", "value": "private, no-store" }]
+    }
+  ]
+}

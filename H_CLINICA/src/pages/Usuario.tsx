@@ -1,0 +1,438 @@
+import React, { useState, useEffect } from 'react';
+import { userService } from '../services/apiService';
+import type { User, CargoUsuario} from '../types/models';
+import '../styles/usuario.css';
+
+interface RegisterUserForm {
+  dni: string;
+  nombre: string;
+  apellido: string;
+  cargo: CargoUsuario;
+  contrasena: string;
+  confirmarContrasena: string;
+}
+
+const Usuario: React.FC = () => {
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [registerLoading, setRegisterLoading] = useState<boolean>(false);
+  const [toggleLoading, setToggleLoading] = useState<string>('');
+  const [error, setError] = useState<string>('');
+  const [success, setSuccess] = useState<string>('');
+  const [showRegisterForm, setShowRegisterForm] = useState<boolean>(false);
+
+  const [registerForm, setRegisterForm] = useState<RegisterUserForm>({
+    dni: '',
+    nombre: '',
+    apellido: '',
+    cargo: 'asistente',
+    contrasena: '',
+    confirmarContrasena: ''
+  });
+
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  const loadUsers = async (): Promise<void> => {
+    try {
+      setError('');
+      const response = await userService.getAllUsers();
+      setUsers(response.data || []);
+    } catch (err: unknown) {
+      console.error('Error cargando usuarios:', err);
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Error al cargar los usuarios');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRegisterChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>): void => {
+    const { name, value } = e.target;
+    setRegisterForm(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const handleRegister = async (e: React.FormEvent): Promise<void> => {
+    e.preventDefault();
+    setRegisterLoading(true);
+    setError('');
+    setSuccess('');
+
+    if (registerForm.dni.length !== 8) {
+      setError('El DNI debe tener 8 dígitos');
+      setRegisterLoading(false);
+      return;
+    }
+
+    if (registerForm.contrasena.length < 6) {
+      setError('La contraseña debe tener al menos 6 caracteres');
+      setRegisterLoading(false);
+      return;
+    }
+
+    if (registerForm.contrasena !== registerForm.confirmarContrasena) {
+      setError('Las contraseñas no coinciden');
+      setRegisterLoading(false);
+      return;
+    }
+
+    try {
+      const userData = {
+        dni: registerForm.dni,
+        nombre: registerForm.nombre || undefined,
+        apellido: registerForm.apellido || undefined,
+        cargo: registerForm.cargo,
+        contrasena: registerForm.contrasena
+      };
+
+      const result = await userService.register(userData);
+      
+      if (result.registered) {
+        setSuccess('Usuario registrado exitosamente');
+        setRegisterForm({
+          dni: '',
+          nombre: '',
+          apellido: '',
+          cargo: 'asistente',
+          contrasena: '',
+          confirmarContrasena: ''
+        });
+        setShowRegisterForm(false);
+        await loadUsers();
+      } else {
+        setError(result.message || 'Error al registrar el usuario');
+      }
+    } catch (err: unknown) {
+      console.error('Error registrando usuario:', err);
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Error al registrar el usuario');
+      }
+    } finally {
+      setRegisterLoading(false);
+    }
+  };
+
+  const handleToggleStatus = async (user: User): Promise<void> => {
+    setToggleLoading(user.dni);
+    setError('');
+    setSuccess('');
+
+    try {
+      const toggleData = {
+        dniToToggle: user.dni,
+        status: user.estado === 1 ? 0 : 1
+      };
+
+      const result = await userService.toggleUserStatus(toggleData);
+      
+      if (result.toggled) {
+        setSuccess(`Usuario ${user.estado === 1 ? 'deshabilitado' : 'habilitado'} exitosamente`);
+        await loadUsers();
+      } else {
+        setError(result.message || 'Error al cambiar el estado del usuario');
+      }
+    } catch (err: unknown) {
+      console.error('Error cambiando estado:', err);
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Error al cambiar el estado del usuario');
+      }
+    } finally {
+      setToggleLoading('');
+    }
+  };
+
+  const resetRegisterForm = (): void => {
+    setRegisterForm({
+      dni: '',
+      nombre: '',
+      apellido: '',
+      cargo: 'asistente',
+      contrasena: '',
+      confirmarContrasena: ''
+    });
+    setError('');
+    setSuccess('');
+    setShowRegisterForm(false);
+  };
+
+  const getCargoDisplay = (cargo: CargoUsuario): string => {
+    const cargos: Record<CargoUsuario, string> = {
+      administrador: 'Administrador',
+      doctor: 'Doctor',
+      asistente: 'Asistente'
+    };
+    return cargos[cargo];
+  };
+
+  if (loading) {
+    return (
+      <div className="loading-container">
+        <div className="loading-text">Cargando usuarios...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="usuarios-container">
+      <div className="card">
+        <div className="usuarios-header">
+          <div>
+            <h1 className="usuarios-title">Gestión de Usuarios</h1>
+            <p className="usuarios-subtitle">Administra los usuarios del sistema</p>
+          </div>
+          <button
+            onClick={() => setShowRegisterForm(true)}
+            className="btn btn-primary"
+          >
+            Registrar Usuario
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="alert alert-error">
+          <div className="alert-header">
+            <h3 className="alert-title">Error</h3>
+          </div>
+          <p className="alert-message">{error}</p>
+        </div>
+      )}
+
+      {success && (
+        <div className="alert alert-success">
+          <div className="alert-header">
+            <h3 className="alert-title">Éxito</h3>
+          </div>
+          <p className="alert-message">{success}</p>
+        </div>
+      )}
+
+      {showRegisterForm && (
+        <div className="register-form-container">
+          <h2 className="register-form-title">Registrar Nuevo Usuario</h2>
+          
+          <form onSubmit={handleRegister} className="register-form">
+            <div className="form-grid">
+              <div className="form-group">
+                <label htmlFor="dni" className="form-label">
+                  DNI *
+                </label>
+                <input
+                  id="dni"
+                  name="dni"
+                  type="text"
+                  value={registerForm.dni}
+                  onChange={handleRegisterChange}
+                  required
+                  className="form-input"
+                  placeholder="Ingrese DNI (8 dígitos)"
+                  maxLength={8}
+                  pattern="[0-9]{8}"
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="cargo" className="form-label">
+                  Cargo *
+                </label>
+                <select
+                  id="cargo"
+                  name="cargo"
+                  value={registerForm.cargo}
+                  onChange={handleRegisterChange}
+                  required
+                  className="form-input"
+                >
+                  <option value="asistente">Asistente</option>
+                  <option value="doctor">Doctor</option>
+                  <option value="administrador">Administrador</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="nombre" className="form-label">
+                  Nombre
+                </label>
+                <input
+                  id="nombre"
+                  name="nombre"
+                  type="text"
+                  value={registerForm.nombre}
+                  onChange={handleRegisterChange}
+                  className="form-input"
+                  placeholder="Ingrese nombre"
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="apellido" className="form-label">
+                  Apellido
+                </label>
+                <input
+                  id="apellido"
+                  name="apellido"
+                  type="text"
+                  value={registerForm.apellido}
+                  onChange={handleRegisterChange}
+                  className="form-input"
+                  placeholder="Ingrese apellido"
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="contrasena" className="form-label">
+                  Contraseña *
+                </label>
+                <input
+                  id="contrasena"
+                  name="contrasena"
+                  type="password"
+                  value={registerForm.contrasena}
+                  onChange={handleRegisterChange}
+                  required
+                  className="form-input"
+                  placeholder="Mínimo 6 caracteres"
+                  minLength={6}
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="confirmarContrasena" className="form-label">
+                  Confirmar Contraseña *
+                </label>
+                <input
+                  id="confirmarContrasena"
+                  name="confirmarContrasena"
+                  type="password"
+                  value={registerForm.confirmarContrasena}
+                  onChange={handleRegisterChange}
+                  required
+                  className="form-input"
+                  placeholder="Repita la contraseña"
+                />
+              </div>
+            </div>
+
+            <div className="form-actions">
+              <button
+                type="submit"
+                disabled={registerLoading}
+                className="btn btn-primary btn-flex"
+              >
+                {registerLoading ? 'Registrando...' : 'Registrar Usuario'}
+              </button>
+              <button
+                type="button"
+                onClick={resetRegisterForm}
+                disabled={registerLoading}
+                className="btn btn-secondary"
+              >
+                Cancelar
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      <div className="table-container">
+        <div className="table-header">
+          <h2 className="table-title">
+            Usuarios del Sistema <span className="table-count">({users.length})</span>
+          </h2>
+        </div>
+        
+        {users.length > 0 ? (
+          <div className="table-responsive">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>DNI</th>
+                  <th>Nombre Completo</th>
+                  <th>Cargo</th>
+                  <th>Estado</th>
+                  <th>Fecha Registro</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((user) => (
+                  <tr key={user.dni}>
+                    <td className="user-dni">{user.dni}</td>
+                    <td>
+                      {user.nombre || user.apellido ? (
+                        `${user.nombre || ''} ${user.apellido || ''}`.trim()
+                      ) : (
+                        <span className="text-muted">No especificado</span>
+                      )}
+                    </td>
+                    <td>
+                      <span className={`badge badge-cargo badge-${user.cargo}`}>
+                        {getCargoDisplay(user.cargo)}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`badge ${
+                        user.estado === 1 ? 'badge-activo' : 'badge-inactivo'
+                      }`}>
+                        {user.estado === 1 ? 'Activo' : 'Inactivo'}
+                      </span>
+                    </td>
+                    <td className="text-muted">
+                      {new Date(user.fecha_creacion).toLocaleDateString('es-ES')}
+                    </td>
+                    <td>
+                      <button
+                        onClick={() => handleToggleStatus(user)}
+                        disabled={toggleLoading === user.dni}
+                        className={`btn btn-sm ${
+                          user.estado === 1 ? 'btn-warning' : 'btn-success'
+                        }`}
+                      >
+                        {toggleLoading === user.dni ? (
+                          'Procesando...'
+                        ) : user.estado === 1 ? (
+                          'Deshabilitar'
+                        ) : (
+                          'Habilitar'
+                        )}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <span>👥</span>
+            </div>
+            <h3 className="empty-state-title">No hay usuarios</h3>
+            <p className="empty-state-description">
+              No se encontraron usuarios en el sistema
+            </p>
+            <button
+              onClick={() => setShowRegisterForm(true)}
+              className="btn btn-primary"
+            >
+              Registrar Primer Usuario
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default Usuario;
