@@ -263,7 +263,7 @@ const Consulta: React.FC = () => {
       ...prev,
       showAntecedentes: false,
       hasAntecedentes: true,
-      activeTab: 'consulta'
+      activeTab: prev.vitalSignsId ? 'consulta' : 'signos-vitales'
     }));
     mostrarAlert("success", "Antecedentes médicos registrados correctamente");
   };
@@ -414,7 +414,7 @@ const Consulta: React.FC = () => {
               </button>
             )}
             
-            {isDoctor && (
+            {isDoctor && !state.consultationId && (
               <button
                 className={`tab-button ${state.activeTab === 'consulta' ? 'active' : ''}`}
                 onClick={() => setActiveTab('consulta')}
@@ -471,13 +471,13 @@ const Consulta: React.FC = () => {
               </div>
             )}
 
-            {state.activeTab === 'consulta' && isDoctor && (
-              <div className="tab-panel">
+            {canAccessConsulta && !state.consultationId && (
+              <div className="tab-panel" hidden={state.activeTab !== 'consulta'}>
                 <ConsultationForm
                   patientDni={state.selectedPatient}
                   idFichaClinica={state.fichaClinicaId}
                   onComplete={handleConsultationComplete}
-                  onBack={() => setActiveTab(state.isFirstConsultation ? 'antecedentes' : 'signos-vitales')}
+                  onBack={() => setActiveTab('signos-vitales')}
                 />
               </div>
             )}

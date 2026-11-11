@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const { leerCampos } = require('../utils/datosClinicos');
 
 async function guardarReceta(connection, consultaId, idFichaClinica, idUsuario, receta) {
     const [recetaResult] = await connection.query(
@@ -319,16 +320,23 @@ const consultaModel = {
     // Obtener consultas por paciente
     async getByPaciente(dni) {
         const [rows] = await pool.query(
-            `SELECT c.*, 
-                    u.NOMBRE as doctor_nombre, u.APELLIDO as doctor_apellido
+            `SELECT c.*, e.PA, e.PULSO, e.PESO, e.TALLA, e.IMC, e.SAO2, e.FR, e.TEMPERATURA,
+                    u.NOMBRE as doctor_nombre, u.APELLIDO as doctor_apellido,
+                    (SELECT cie.DESCRIPCION FROM DIAGNOSTICOS_CONSULTA d JOIN CATALOGO_CIE10 cie USING (ID_CIE_10)
+                     WHERE d.ID_CONSULTA = c.ID_CONSULTA
+                     ORDER BY CASE WHEN d.TIPO = 'principal' THEN 0 ELSE 1 END, d.ID_DIAGNOSTICO LIMIT 1) AS DIAGNOSTICO
              FROM CONSULTA c
              JOIN FICHA_CLINICA fc ON c.ID_FICHA_CLINICA = fc.ID_FICHA_CLINICA
              LEFT JOIN USUARIOS u ON c.ID_USUARIO = u.ID_USUARIO
+             LEFT JOIN EXAMEN_CLINICO e ON e.ID_CONSULTA = c.ID_CONSULTA
              WHERE fc.DNI = ?
              ORDER BY c.FECHA DESC`,
             [dni]
         );
-        return rows;
+        return rows.map(row => ({
+            ...row,
+            EXAMEN_DETALLE: leerCampos(row.EXAMEN_FISICO_DETALLADO)
+        }));
     }
 };
 

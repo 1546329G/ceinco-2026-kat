@@ -1,3 +1,5 @@
+const { presentarAntecedentes, leerCampos } = require('../utils/datosClinicos');
+const db = require('../config/database');
 const pacienteModel = require('../models/pacienteModel');
 const consultaModel = require('../models/consultaModel');
 const PDFDocument = require('pdfkit');
@@ -126,9 +128,19 @@ const pacienteController = {
     },
 
     // Generar PDF de historia clínica
+    async getAntecedentes(req, res) {
+        const [[row]] = await db.query(
+            `SELECT a.* FROM FICHA_CLINICA f LEFT JOIN ANTECEDENTES a
+              ON a.ID_FICHA_CLINICA = f.ID_FICHA_CLINICA WHERE f.DNI = ?`, [req.params.dni]
+        );
+        if (!row) return res.status(404).json({ error: 'Paciente no encontrado' });
+        res.json({ campos: presentarAntecedentes(row) });
+    },
+
     async generatePDF(req, res) {
         try {
             const { dni } = req.params;
+            const soloAntecedentes = req.query.seccion === 'antecedentes';
             const historia = await pacienteModel.getHistoriaCompleta(dni);
             
             if (!historia) {
@@ -147,7 +159,7 @@ const pacienteController = {
 
             // Configurar respuesta
             res.setHeader('Content-Type', 'application/pdf');
-            res.setHeader('Content-Disposition', `attachment; filename=historia-${dni}.pdf`);
+            res.setHeader('Content-Disposition', `attachment; filename=${soloAntecedentes ? 'antecedentes' : 'historia'}-${encodeURIComponent(dni)}.pdf`);
             
             doc.pipe(res);
 
@@ -159,7 +171,7 @@ const pacienteController = {
             };
 
             // Encabezado
-            doc.fontSize(20).fillColor(colors.primary).text('HISTORIA CLÍNICA', { align: 'center' });
+            doc.fontSize(20).fillColor(colors.primary).text(soloAntecedentes ? 'ANTECEDENTES CLÍNICOS' : 'HISTORIA CLÍNICA', { align: 'center' });
             doc.moveDown();
             doc.fontSize(12).fillColor(colors.secondary).text(`Generado: ${new Date().toLocaleString()}`, { align: 'center' });
             doc.moveDown(2);
@@ -188,36 +200,15 @@ const pacienteController = {
 
             doc.moveDown();
 
-            // Antecedentes
-            if (historia.antecedentes) {
-                doc.fontSize(14).fillColor(colors.accent).text('ANTECEDENTES');
-                doc.moveDown(0.5);
-                doc.fontSize(11).fillColor('black');
-
-                const ant = historia.antecedentes;
-                
-                if (ant.EA_RELATO) {
-                    doc.text('Enfermedad Actual:', { underline: true });
-                    doc.text(ant.EA_RELATO);
-                    doc.moveDown(0.5);
-                }
-
-                // Factores de riesgo
-                const factores = [];
-                if (ant.FR_TABAQUISMO) factores.push('Tabaquismo');
-                if (ant.FR_HIPERTENSION) factores.push('Hipertensión');
-                if (ant.FR_DIABETES) factores.push('Diabetes');
-                if (ant.FR_DISLIPIDEMIA) factores.push('Dislipidemia');
-                if (ant.FR_OBESIDAD) factores.push('Obesidad');
-
-                if (factores.length > 0) {
-                    doc.text('Factores de Riesgo: ' + factores.join(', '));
-                }
-                doc.moveDown();
-            }
+            const campos = presentarAntecedentes(historia.antecedentes);
+            doc.fontSize(14).fillColor(colors.accent).text('ANTECEDENTES');
+            doc.moveDown(0.5).fontSize(11).fillColor('black');
+            if (!campos.length) doc.text('Sin antecedentes registrados.');
+            for (const { nombre, valor } of campos) doc.text(nombre + ': ' + valor);
+            doc.moveDown();
 
             // Consultas
-            if (historia.consultas && historia.consultas.length > 0) {
+            if (!soloAntecedentes && historia.consultas?.length) {
                 doc.fontSize(14).fillColor(colors.accent).text('CONSULTAS REALIZADAS');
                 
                 historia.consultas.forEach((consulta, index) => {
@@ -232,6 +223,12 @@ const pacienteController = {
                         doc.text(consulta.RELATO);
                     }
 
+                    if (consulta.PLAN_TRABAJO) doc.text('Plan de trabajo: ' + consulta.PLAN_TRABAJO);
+                    if (consulta.EXAMEN_FISICO_SIMPLIFICADO) doc.text('Examen físico: ' + consulta.EXAMEN_FISICO_SIMPLIFICADO);
+                    for (const { nombre, valor } of leerCampos(consulta.EXAMEN_FISICO_DETALLADO)) {
+                        doc.text(nombre + ': ' + valor);
+                    }
+
                     if (consulta.signos_vitales) {
                         const sv = consulta.signos_vitales;
                         doc.text('Signos Vitales:', { underline: true });
@@ -241,7 +238,7 @@ const pacienteController = {
                     if (consulta.diagnosticos && consulta.diagnosticos.length > 0) {
                         doc.text('Diagnósticos:', { underline: true });
                         consulta.diagnosticos.forEach(d => {
-                            doc.text(`  • ${d.CODIGO} - ${d.DIAGNOSTICO_DESC} (${d.TIPO})`);
+                            doc.text(`  • ${d.CODIGO} - ${d.diagnostico_desc} (${d.TIPO})`);
                         });
                     }
 

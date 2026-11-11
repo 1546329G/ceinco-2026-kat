@@ -508,6 +508,7 @@ export const citaService = {
 
 type ConsultaApi = ConsultaCompletaData & {
   PLAN_TRABAJO: string;
+  EXAMEN_FISICO_SIMPLIFICADO?: string;
   paciente_nombre: string;
   doctor_nombre?: string;
   doctor_apellido?: string;
@@ -578,6 +579,10 @@ export const consultaService = {
       ID_CONSULTA: number;
       FECHA: string;
       RELATO: string;
+      EXAMEN_FISICO?: string;
+      EXAMEN_DETALLE?: Array<{ nombre: string; valor: string }>;
+      DIAGNOSTICO?: string;
+      DOCTOR?: string;
       PLAN_DE_TRABAJO: string;
       ES_PRIMERA_CONSULTA: number;
       ESTADO: string;
@@ -588,6 +593,9 @@ export const consultaService = {
       PESO?: number;
       TALLA?: number;
       IMC?: number;
+      SAO2?: number;
+      FR?: number;
+      TEMPERATURA?: number;
       FECHA_SIGNOS_VITALES?: string;
       TOTAL_DIAGNOSTICOS: number;
       TOTAL_RECETAS: number;
@@ -596,7 +604,10 @@ export const consultaService = {
   }> => {
     const { data } = await api.get(`/consultas/paciente/${encodeURIComponent(dni)}`);
     const consultas = (data as Array<ConsultaApi & { ES_PRIMERA_CONSULTA: number; TOTAL_DIAGNOSTICOS: number; TOTAL_RECETAS: number }>).map(row => ({
-      ...row, PLAN_DE_TRABAJO: row.PLAN_TRABAJO, DOCTOR_NOMBRE: row.doctor_nombre,
+      ...row, PLAN_DE_TRABAJO: row.PLAN_TRABAJO,
+      EXAMEN_FISICO: row.EXAMEN_FISICO_SIMPLIFICADO,
+      DOCTOR: [row.doctor_nombre, row.doctor_apellido].filter(Boolean).join(' '),
+      DOCTOR_NOMBRE: row.doctor_nombre,
       DOCTOR_APELLIDO: row.doctor_apellido, TIPO_CONSULTA: row.ES_PRIMERA_CONSULTA ? 'Primera consulta' : 'Control'
     }));
     return { message: 'Historial de consultas', consultas, total: consultas.length };
@@ -718,9 +729,14 @@ export const reporteService = {
 };
 
 export const historiaClinicaService = {
-  generarHistoriaClinicaPDF: async (dni: string): Promise<Blob> => {
+  obtenerAntecedentes: async (dni: string): Promise<Array<{ nombre: string; valor: string }>> => {
+    const { data } = await api.get<{ campos: Array<{ nombre: string; valor: string }> }>(`/pacientes/${encodeURIComponent(dni)}/antecedentes`);
+    return data.campos;
+  },
+  generarHistoriaClinicaPDF: async (dni: string, soloAntecedentes = false): Promise<Blob> => {
     const response = await api.get(`/pacientes/${encodeURIComponent(dni)}/pdf`, {
-      responseType: 'blob'
+      responseType: 'blob',
+      params: soloAntecedentes ? { seccion: 'antecedentes' } : undefined
     });
     return response.data;
   }

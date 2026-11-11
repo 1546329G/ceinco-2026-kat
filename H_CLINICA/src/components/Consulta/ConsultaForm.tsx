@@ -308,15 +308,6 @@ const ConsultationForm: React.FC<ConsultationFormProps> = ({
     }
 
     if (isFirstConsultation) {
-      const tieneDatosExamenFisico = 
-        formData.examenFisico.estadoGeneral.trim() ||
-        formData.examenFisico.cabeza.trim() ||
-        formData.examenFisico.torax.trim() ||
-        formData.examenFisico.abdomen.trim() ||
-        formData.examenFisico.extremidadesSuperiores.trim() ||
-        formData.examenFisico.motilidad.trim() ||
-        formData.examenFisico.observaciones.trim();
-
       if (!tieneDatosExamenFisico) {
         setError('Para primera consulta, complete al menos un campo del examen físico detallado');
         return;
@@ -386,7 +377,9 @@ const ConsultationForm: React.FC<ConsultationFormProps> = ({
         planDeTrabajo: formData.planDeTrabajo,
         examenFisicoDetallado: isFirstConsultation
           ? { ...examenFisicoDetallado, observaciones: formData.examenFisico.observaciones }
-          : undefined,
+          : formData.examenFisico.observaciones.trim()
+            ? { ...examenFisicoDetallado, observaciones: formData.examenFisico.observaciones }
+            : undefined,
         examenFisicoSimplificado: !isFirstConsultation ? formData.examenFisicoSimplificado : undefined,
         diagnosticosSecundarios: formData.diagnosticosSecundarios
       };
@@ -460,21 +453,11 @@ const ConsultationForm: React.FC<ConsultationFormProps> = ({
     }));
   };
 
-  const canSubmit = !loading && 
-    hasVitalSignsToday && 
-    idFichaClinica && 
-    formData.idExamenClinico > 0 && 
-    formData.relato.trim() && 
-    formData.planDeTrabajo.trim() &&
-    (isFirstConsultation ? 
-      (formData.examenFisico.estadoGeneral.trim() || 
-       formData.examenFisico.cabeza.trim() || 
-       formData.examenFisico.torax.trim() || 
-       formData.examenFisico.abdomen.trim() || 
-       formData.examenFisico.extremidadesSuperiores.trim() || 
-       formData.examenFisico.motilidad.trim() ||
-       formData.examenFisico.observaciones.trim()) 
-      : formData.examenFisicoSimplificado.trim());
+  const tieneDatosExamenFisico = Object.values(formData.examenFisico).some(valor => valor.trim());
+  const canSubmit = !loading && !checkingAntecedentes && !checkingVitalSigns &&
+    hasVitalSignsToday && idFichaClinica && formData.idExamenClinico > 0 &&
+    formData.relato.trim() && formData.planDeTrabajo.trim() &&
+    (isFirstConsultation ? hasAntecedentes && tieneDatosExamenFisico : formData.examenFisicoSimplificado.trim());
 
   const examenFisicoFields: Array<{
     field: keyof FormData['examenFisico'];
@@ -693,9 +676,7 @@ const ConsultationForm: React.FC<ConsultationFormProps> = ({
             {isFirstConsultation && !hasAntecedentes && ' Antecedentes pendientes'}
             {!formData.relato.trim() && ' Relato de consulta requerido'}
             {!formData.planDeTrabajo.trim() && ' Plan de trabajo requerido'}
-            {isFirstConsultation && 
-              !formData.examenFisico.estadoGeneral.trim() && 
-              !formData.examenFisico.observaciones.trim() && ' Examen físico requerido'}
+            {isFirstConsultation && !tieneDatosExamenFisico && ' Examen físico requerido'}
             {!isFirstConsultation && 
               !formData.examenFisicoSimplificado.trim() && ' Examen físico simplificado requerido'}
             {canSubmit && ' Formulario completo y listo para enviar'}

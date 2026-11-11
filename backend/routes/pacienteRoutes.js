@@ -14,6 +14,7 @@ const rolesPermitidos = [ROLES.ADMIN, ROLES.DOCTOR, ROLES.ASISTENTE];
 router.get('/', verifyRole(rolesPermitidos), pacienteController.getAll);
 
 router.get('/:dni/primera-consulta', verifyRole(ALL_CLINICAL), complementos.primeraConsulta);
+router.get('/:dni/antecedentes', verifyRole(DOCTOR), pacienteController.getAntecedentes);
 router.put('/:dni/antecedentes', verifyRole(DOCTOR), complementos.guardarAntecedentes);
 
 // Registrar paciente

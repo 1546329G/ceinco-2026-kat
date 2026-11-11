@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { pacienteService, consultaService } from '../../services/apiService';
+import { pacienteService, consultaService, historiaClinicaService } from '../../services/apiService';
 import type { Paciente, Consulta, CreatePacienteData } from '../../types/models';
+import { useAuth } from '../../context/AuthContext';
 import PacienteForm from './PacienteForm';
 import '../../styles/paciente.css'
 
@@ -15,6 +16,10 @@ interface ConsultaCompleta extends Consulta {
   ANTECEDENTES_ALERGICOS?: string;
   MEDICACION_ACTUAL?: string;
   EXAMEN_FISICO?: string;
+  SAO2?: number;
+  FR?: number;
+  TEMPERATURA?: number;
+  EXAMEN_DETALLE?: Array<{ nombre: string; valor: string }>;
   MOTIVO_CONSULTA?: string;
 }
 
@@ -30,11 +35,16 @@ interface ApiError {
 }
 
 const PacienteDetalle: React.FC<PacienteDetailProps> = ({ paciente, onBack }) => {
+  const { cargo } = useAuth();
+  const puedeVerHistoria = cargo === 'administrador' || cargo === 'doctor';
+  const [antecedentes, setAntecedentes] = useState<Array<{ nombre: string; valor: string }> | null>(null);
+  const [errorAntecedentes, setErrorAntecedentes] = useState(false);
+  const [descargando, setDescargando] = useState(false);
   const [detalle, setDetalle] = useState<Paciente | null>(null);
   const [consultas, setConsultas] = useState<ConsultaCompleta[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [consultasLoading, setConsultasLoading] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<'info' | 'consultas'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'consultas' | 'antecedentes'>('info');
   const [editMode, setEditMode] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
   const [alert, setAlert] = useState<{ type: 'success' | 'error'; message: string; visible: boolean }>({
@@ -63,6 +73,34 @@ const PacienteDetalle: React.FC<PacienteDetailProps> = ({ paciente, onBack }) =>
       setLoading(false);
     }
   }, [paciente.DNI, mostrarAlert]);
+
+  useEffect(() => {
+    if (activeTab !== 'antecedentes' || !puedeVerHistoria) return;
+    let vigente = true;
+    setAntecedentes(null);
+    setErrorAntecedentes(false);
+    historiaClinicaService.obtenerAntecedentes(paciente.DNI)
+      .then(campos => { if (vigente) setAntecedentes(campos); })
+      .catch(() => { if (vigente) setErrorAntecedentes(true); });
+    return () => { vigente = false; };
+  }, [activeTab, paciente.DNI, puedeVerHistoria]);
+
+  const descargarPDF = async (soloAntecedentes: boolean) => {
+    setDescargando(true);
+    try {
+      const archivo = await historiaClinicaService.generarHistoriaClinicaPDF(paciente.DNI, soloAntecedentes);
+      const url = URL.createObjectURL(archivo);
+      const enlace = document.createElement('a');
+      enlace.href = url;
+      enlace.download = `${soloAntecedentes ? 'antecedentes' : 'historia'}-${paciente.DNI}.pdf`;
+      enlace.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch {
+      mostrarAlert('error', 'No se pudo descargar el PDF');
+    } finally {
+      setDescargando(false);
+    }
+  };
 
   const loadConsultas = useCallback(async (): Promise<void> => {
     try {
@@ -191,6 +229,10 @@ const PacienteDetalle: React.FC<PacienteDetailProps> = ({ paciente, onBack }) =>
             </div>
           </div>
           <div className="detail-header-actions">
+            {!editMode && puedeVerHistoria && (
+              <button type="button" className="btn btn-secondary" disabled={descargando}
+                onClick={() => descargarPDF(false)}>Descargar historia clínica</button>
+            )}
             {!editMode && (
               <button
                 onClick={() => setEditMode(true)}
@@ -242,6 +284,12 @@ const PacienteDetalle: React.FC<PacienteDetailProps> = ({ paciente, onBack }) =>
               >
                 Historial de Consultas ({consultas.length})
               </button>
+              {puedeVerHistoria && (
+                <button type="button" onClick={() => setActiveTab('antecedentes')}
+                  className={`tab-button ${activeTab === 'antecedentes' ? 'active' : ''}`}>
+                  Antecedentes
+                </button>
+              )}
             </nav>
           </div>
 
@@ -314,6 +362,28 @@ const PacienteDetalle: React.FC<PacienteDetailProps> = ({ paciente, onBack }) =>
                   </div>
                 </div>
               </div>
+            )}
+
+            {activeTab === 'antecedentes' && puedeVerHistoria && (
+              <section className="info-section">
+                <h3 className="section-header">Antecedentes clínicos</h3>
+                {errorAntecedentes && <p role="alert">No se pudieron cargar los antecedentes.</p>}
+                {!errorAntecedentes && antecedentes === null && <p>Cargando antecedentes…</p>}
+                {antecedentes?.length === 0 && <p>Sin antecedentes registrados.</p>}
+                {antecedentes && antecedentes.length > 0 && (
+                  <>
+                    <dl className="info-list">
+                      {antecedentes.map(({ nombre, valor }, index) => (
+                        <div className="info-item" key={`${nombre}-${index}`}>
+                          <dt className="info-label">{nombre}</dt><dd className="info-value">{valor}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                    <button type="button" className="btn btn-primary" disabled={descargando}
+                      onClick={() => descargarPDF(true)}>Descargar antecedentes en PDF</button>
+                  </>
+                )}
+              </section>
             )}
 
             {activeTab === 'consultas' && (
@@ -391,14 +461,18 @@ const PacienteDetalle: React.FC<PacienteDetailProps> = ({ paciente, onBack }) =>
                             </div>
                           )}
 
+                          {consulta.EXAMEN_DETALLE?.map(({ nombre, valor }) => (
+                            <div className="consulta-field" key={nombre}>
+                              <span className="consulta-label">{nombre}:</span>
+                              <span className="consulta-value">{valor}</span>
+                            </div>
+                          ))}
+
                           {consulta.RELATO && (
                             <div className="consulta-field">
                               <span className="consulta-label">Relato:</span>
                               <span className="consulta-value">
-                                {consulta.RELATO.length > 150 
-                                  ? `${consulta.RELATO.substring(0, 150)}...` 
-                                  : consulta.RELATO
-                                }
+                                {consulta.RELATO}
                               </span>
                             </div>
                           )}
@@ -414,15 +488,12 @@ const PacienteDetalle: React.FC<PacienteDetailProps> = ({ paciente, onBack }) =>
                             <div className="consulta-field">
                               <span className="consulta-label">Plan de Trabajo:</span>
                               <span className="consulta-value">
-                                {consulta.PLAN_DE_TRABAJO.length > 150 
-                                  ? `${consulta.PLAN_DE_TRABAJO.substring(0, 150)}...` 
-                                  : consulta.PLAN_DE_TRABAJO
-                                }
+                                {consulta.PLAN_DE_TRABAJO}
                               </span>
                             </div>
                           )}
 
-                          {(consulta.PA || consulta.PULSO || consulta.PESO || consulta.TALLA) && (
+                          {(consulta.PA || consulta.PULSO || consulta.PESO || consulta.TALLA || consulta.SAO2 || consulta.FR || consulta.TEMPERATURA) && (
                             <div className="consulta-field">
                               <span className="consulta-label">Signos Vitales:</span>
                               <span className="consulta-value">
@@ -430,7 +501,10 @@ const PacienteDetalle: React.FC<PacienteDetailProps> = ({ paciente, onBack }) =>
                                   consulta.PA && `PA: ${consulta.PA}`,
                                   consulta.PULSO && `Pulso: ${consulta.PULSO}`,
                                   consulta.PESO && `Peso: ${consulta.PESO}kg`,
-                                  consulta.TALLA && `Talla: ${consulta.TALLA}cm`,
+                                  consulta.TALLA && `Talla: ${consulta.TALLA} m`,
+                                  consulta.SAO2 && `Saturación: ${consulta.SAO2}%`,
+                                  consulta.FR && `Frecuencia respiratoria: ${consulta.FR}`,
+                                  consulta.TEMPERATURA && `Temperatura: ${consulta.TEMPERATURA} °C`,
                                   consulta.IMC && `IMC: ${consulta.IMC}`
                                 ].filter(Boolean).join(' | ')}
                               </span>
