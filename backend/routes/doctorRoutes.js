@@ -10,9 +10,4 @@ router.get('/',
     doctorController.getAllDoctores
 );
 
-router.get('/:idDoctor', 
-    verifyRole(['administrador', 'doctor', 'asistente']), 
-    doctorController.getDoctorById
-);
-
 module.exports = router;

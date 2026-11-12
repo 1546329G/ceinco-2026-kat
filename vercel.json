@@ -1,17 +1,27 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": null,
-  "installCommand": "npm ci --prefix backend --omit=dev --no-audit --no-fund && npm ci --prefix H_CLINICA --include=dev --no-audit --no-fund",
-  "buildCommand": "npm run build",
-  "outputDirectory": "H_CLINICA/dist",
   "regions": ["cle1"],
+  "services": {
+    "frontend": {
+      "root": "frontend",
+      "framework": "vite",
+      "rewrites": [
+        { "source": "/(.*)", "destination": "/index.html" }
+      ]
+    },
+    "backend": {
+      "root": "backend",
+      "framework": "express",
+      "entrypoint": "server.js"
+    }
+  },
   "rewrites": [
-    { "source": "/api/:path*", "destination": "/api/ceinco?__ceinco_path=:path" },
-    { "source": "/:page(login|dashboard|pacientes|citas|consulta|reporte|usuario|perfil)", "destination": "/index.html" }
+    { "source": "/api/(.*)", "destination": { "service": "backend" } },
+    { "source": "/(.*)", "destination": { "service": "frontend" } }
   ],
   "headers": [
     {
-      "source": "/api/:path*",
+      "source": "/api/(.*)",
       "headers": [{ "key": "Cache-Control", "value": "private, no-store" }]
     }
   ]

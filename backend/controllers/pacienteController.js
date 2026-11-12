@@ -1,8 +1,6 @@
-const { presentarAntecedentes } = require('../utils/datosClinicos');
-const db = require('../config/database');
 const pacienteModel = require('../models/pacienteModel');
 const consultaModel = require('../models/consultaModel');
-const { crearHistoriaClinicaPdf } = require('../utils/historiaClinicaPdf');
+const PDFDocument = require('pdfkit');
 const { logActivity } = require('../middleware/logActivity');
 
 const pacienteController = {
@@ -128,29 +126,129 @@ const pacienteController = {
     },
 
     // Generar PDF de historia clínica
-    async getAntecedentes(req, res) {
-        const [[row]] = await db.query(
-            `SELECT a.* FROM FICHA_CLINICA f LEFT JOIN ANTECEDENTES a
-              ON a.ID_FICHA_CLINICA = f.ID_FICHA_CLINICA WHERE f.DNI = ?`, [req.params.dni]
-        );
-        if (!row) return res.status(404).json({ error: 'Paciente no encontrado' });
-        res.json({ campos: presentarAntecedentes(row) });
-    },
-
     async generatePDF(req, res) {
         try {
             const { dni } = req.params;
-            const soloAntecedentes = req.query.seccion === 'antecedentes';
-            const historia = await pacienteModel.getHistoriaCompleta(dni, soloAntecedentes);
+            const historia = await pacienteModel.getHistoriaCompleta(dni);
             
             if (!historia) {
                 return res.status(404).json({ error: 'Paciente no encontrado' });
             }
 
-            const doc = crearHistoriaClinicaPdf(historia, soloAntecedentes);
+            // Crear PDF
+            const doc = new PDFDocument({
+                size: 'A4',
+                margin: 50,
+                info: {
+                    Title: `Historia Clínica - ${historia.NOMBRE_APELLIDO}`,
+                    Author: 'Sistema CEINCO'
+                }
+            });
+
+            // Configurar respuesta
             res.setHeader('Content-Type', 'application/pdf');
-            res.attachment(`${soloAntecedentes ? 'antecedentes' : 'historia'}-${encodeURIComponent(dni)}.pdf`);
+            res.setHeader('Content-Disposition', `attachment; filename=historia-${dni}.pdf`);
+            
             doc.pipe(res);
+
+            // Estilos
+            const colors = {
+                primary: '#2563eb',
+                secondary: '#4b5563',
+                accent: '#059669'
+            };
+
+            // Encabezado
+            doc.fontSize(20).fillColor(colors.primary).text('HISTORIA CLÍNICA', { align: 'center' });
+            doc.moveDown();
+            doc.fontSize(12).fillColor(colors.secondary).text(`Generado: ${new Date().toLocaleString()}`, { align: 'center' });
+            doc.moveDown(2);
+
+            // Datos del paciente
+            doc.fontSize(14).fillColor(colors.accent).text('DATOS DEL PACIENTE');
+            doc.moveDown(0.5);
+            doc.fontSize(11).fillColor('black');
+            
+            const datos = [
+                ['Nombre:', historia.NOMBRE_APELLIDO],
+                ['DNI:', historia.DNI],
+                ['Fecha Nacimiento:', new Date(historia.FECHA_NACIMIENTO).toLocaleDateString()],
+                ['Edad:', `${historia.EDAD} años`],
+                ['Sexo:', historia.sexo_desc || historia.SEXO],
+                ['Estado Civil:', historia.estado_civil_desc || historia.ESTADO_CIVIL || 'No especificado'],
+                ['Teléfono:', historia.TELEFONO || 'No registrado'],
+                ['Email:', historia.EMAIL || 'No registrado'],
+                ['Domicilio:', historia.DOMICILIO || 'No registrado'],
+                ['Ocupación:', historia.OCUPACION || 'No registrado']
+            ];
+
+            datos.forEach(([label, value]) => {
+                doc.text(`${label} ${value}`, { continued: false });
+            });
+
+            doc.moveDown();
+
+            // Antecedentes
+            if (historia.antecedentes) {
+                doc.fontSize(14).fillColor(colors.accent).text('ANTECEDENTES');
+                doc.moveDown(0.5);
+                doc.fontSize(11).fillColor('black');
+
+                const ant = historia.antecedentes;
+                
+                if (ant.EA_RELATO) {
+                    doc.text('Enfermedad Actual:', { underline: true });
+                    doc.text(ant.EA_RELATO);
+                    doc.moveDown(0.5);
+                }
+
+                // Factores de riesgo
+                const factores = [];
+                if (ant.FR_TABAQUISMO) factores.push('Tabaquismo');
+                if (ant.FR_HIPERTENSION) factores.push('Hipertensión');
+                if (ant.FR_DIABETES) factores.push('Diabetes');
+                if (ant.FR_DISLIPIDEMIA) factores.push('Dislipidemia');
+                if (ant.FR_OBESIDAD) factores.push('Obesidad');
+
+                if (factores.length > 0) {
+                    doc.text('Factores de Riesgo: ' + factores.join(', '));
+                }
+                doc.moveDown();
+            }
+
+            // Consultas
+            if (historia.consultas && historia.consultas.length > 0) {
+                doc.fontSize(14).fillColor(colors.accent).text('CONSULTAS REALIZADAS');
+                
+                historia.consultas.forEach((consulta, index) => {
+                    doc.moveDown(0.5);
+                    doc.fontSize(12).fillColor(colors.primary).text(`Consulta #${index + 1} - ${new Date(consulta.FECHA).toLocaleString()}`);
+                    doc.fontSize(11).fillColor('black');
+                    
+                    doc.text(`Doctor: ${consulta.doctor_nombre || ''} ${consulta.doctor_apellido || ''}`);
+                    
+                    if (consulta.RELATO) {
+                        doc.text('Motivo:', { underline: true });
+                        doc.text(consulta.RELATO);
+                    }
+
+                    if (consulta.signos_vitales) {
+                        const sv = consulta.signos_vitales;
+                        doc.text('Signos Vitales:', { underline: true });
+                        doc.text(`PA: ${sv.PA || 'N/R'} | Pulso: ${sv.PULSO || 'N/R'} | Sat O2: ${sv.SAO2 || 'N/R'} | Temp: ${sv.TEMPERATURA || 'N/R'}°C`);
+                    }
+
+                    if (consulta.diagnosticos && consulta.diagnosticos.length > 0) {
+                        doc.text('Diagnósticos:', { underline: true });
+                        consulta.diagnosticos.forEach(d => {
+                            doc.text(`  • ${d.CODIGO} - ${d.DIAGNOSTICO_DESC} (${d.TIPO})`);
+                        });
+                    }
+
+                    doc.moveDown(0.5);
+                });
+            }
+
             doc.end();
 
             await logActivity(req.user.dni, 'PDF_GENERADO', {

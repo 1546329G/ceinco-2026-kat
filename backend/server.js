@@ -9,7 +9,6 @@ const authRoutes = require('./routes/authRoutes');
 const pacienteRoutes = require('./routes/pacienteRoutes');
 const citaRoutes = require('./routes/citaRoutes');
 const consultaRoutes = require('./routes/consultaRoutes');
-const usuarioRoutes = require('./routes/usuarioRoutes');
 const catalogoRoutes = require('./routes/catalogoRoutes');
 const reporteRoutes = require('./routes/reporteRoutes');
 const doctorRoutes = require('./routes/doctorRoutes');
@@ -18,7 +17,9 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors());
+// Frontend y API comparten dominio en Vercel y Docker; CORS solo hace falta en desarrollo.
+const corsOrigins = process.env.CORS_ORIGIN?.split(',').map(origin => origin.trim()).filter(Boolean);
+app.use(cors({ origin: corsOrigins?.length ? corsOrigins : /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/ }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -26,6 +27,7 @@ app.use(express.urlencoded({ extended: true }));
 const { verifyToken, verifyRole } = require('./middleware/authMiddleware');
 const { ALL_CLINICAL } = require('./config/roles');
 const { maxFileSize, useDatabase } = require('./config/attachments');
+const { enVercel } = require('./config/runtime');
 const downloadAttachment = async (req, res, next) => {
     if (useDatabase) {
         const [[archivo]] = await getPool().query('SELECT CONTENIDO FROM ADJUNTOS_EXAMEN WHERE NOMBRE = ?', [req.params.archivo]);
@@ -39,11 +41,11 @@ const downloadAttachment = async (req, res, next) => {
 };
 app.get(['/api/adjuntos/:archivo', '/uploads/:archivo'], verifyToken, verifyRole(ALL_CLINICAL), downloadAttachment);
 app.use('/api/adjuntos', (req, res, next) => {
-    if (process.env.CEINCO_VERCEL_RUNTIME === '1') return next();
+    if (enVercel) return next();
     // Los adjuntos guardados en Docker siguen disponibles en su ruta original.
     res.redirect(307, '/uploads' + req.url);
 });
-if (process.env.CEINCO_VERCEL_RUNTIME !== '1') app.use('/uploads', verifyToken, verifyRole(ALL_CLINICAL), (req, res, next) => {
+if (!enVercel) app.use('/uploads', verifyToken, verifyRole(ALL_CLINICAL), (req, res, next) => {
     res.set('Cache-Control', 'private, no-store');
     res.attachment();
     next();
@@ -54,7 +56,6 @@ app.use('/api/auth', authRoutes);
 app.use('/api/pacientes', pacienteRoutes);
 app.use('/api/citas', citaRoutes);
 app.use('/api/consultas', consultaRoutes);
-app.use('/api/usuarios', usuarioRoutes);
 app.use('/api/catalogos', catalogoRoutes);
 app.use('/api/reportes', reporteRoutes);
 app.use('/api/doctores', doctorRoutes);
@@ -92,7 +93,6 @@ app.get('/', (req, res) => {
             pacientes: '/api/pacientes',
             citas: '/api/citas',
             consultas: '/api/consultas',
-            usuarios: '/api/usuarios',
             catalogos: '/api/catalogos',
             reportes: '/api/reportes',
             health: '/api/health'
@@ -120,6 +120,17 @@ app.use((err, req, res, next) => {
         });
     }
     
+    if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+        return res.status(400).json({
+            error: 'Campo de archivo incorrecto',
+            message: 'El campo del archivo debe llamarse "archivo"'
+        });
+    }
+
+    if (err.status === 400) {
+        return res.status(400).json({ error: 'Error al subir archivo', message: err.message });
+    }
+
     if (err.code === 'LIMIT_FILE_COUNT') {
         return res.status(400).json({ 
             error: 'Demasiados archivos',

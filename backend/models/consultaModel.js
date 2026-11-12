@@ -1,5 +1,4 @@
 const pool = require('../config/database');
-const { leerCampos } = require('../utils/datosClinicos');
 
 async function guardarReceta(connection, consultaId, idFichaClinica, idUsuario, receta) {
     const [recetaResult] = await connection.query(
@@ -31,13 +30,31 @@ const consultaModel = {
         try {
             await connection.beginTransaction();
             const [[consulta]] = await connection.query(
-                'SELECT ID_FICHA_CLINICA FROM CONSULTA WHERE ID_CONSULTA = ? FOR UPDATE', [consultaId]
+                'SELECT ID_FICHA_CLINICA, ID_RECETA FROM CONSULTA WHERE ID_CONSULTA = ? FOR UPDATE', [consultaId]
             );
             if (!consulta) {
                 await connection.rollback();
                 return null;
             }
-            const id = await guardarReceta(connection, consultaId, consulta.ID_FICHA_CLINICA, idUsuario, receta);
+            let id;
+            if (consulta.ID_RECETA) {
+                // Una receta por consulta: al volver a guardar se reemplaza su contenido.
+                id = consulta.ID_RECETA;
+                await connection.query(
+                    'UPDATE RECETAS SET INDICACIONES_GENERALES = ?, ID_USUARIO = ?, FECHA_EMISION = NOW() WHERE ID_RECETA = ?',
+                    [receta.indicaciones || null, idUsuario, id]
+                );
+                await connection.query('DELETE FROM RECETA_DETALLE WHERE ID_RECETA = ?', [id]);
+                for (const med of receta.medicamentos) {
+                    await connection.query(
+                        `INSERT INTO RECETA_DETALLE (ID_RECETA, ID_MEDICAMENTO, DOSIS, FRECUENCIA, DURACION)
+                         VALUES (?, ?, ?, ?, ?)`,
+                        [id, med.id_medicamento, med.dosis ?? null, med.frecuencia ?? null, med.duracion ?? null]
+                    );
+                }
+            } else {
+                id = await guardarReceta(connection, consultaId, consulta.ID_FICHA_CLINICA, idUsuario, receta);
+            }
             await connection.commit();
             return id;
         } catch (error) {
@@ -70,7 +87,9 @@ const consultaModel = {
                 examenes_auxiliares
             } = data;
 
-            let signos_vitales = data.signos_vitales;
+            // Los signos vitales solo provienen del registro de preconsulta hecho por el asistente;
+            // se ignoran los que envíe el cliente para que el doctor no pueda ingresarlos ni editarlos.
+            let signos_vitales = null;
             let idFichaClinica;
             let consultaId = idConsulta;
 
@@ -135,8 +154,9 @@ const consultaModel = {
                 // Actualizar cita si existe
                 if (idCita) {
                     await connection.query(
-                        `UPDATE CITAS SET ESTADO = 'atendida' WHERE ID_CITAS = ?`,
-                        [idCita]
+                        `UPDATE CITAS SET ESTADO = 'atendida'
+                         WHERE ID_CITAS = ? AND ID_FICHA_CLINICA = ? AND ESTADO = 'programada'`,
+                        [idCita, idFichaClinica]
                     );
                 }
             } else {
@@ -284,11 +304,12 @@ const consultaModel = {
         // Receta
         if (result.ID_RECETA) {
             const [receta] = await pool.query(
-                `SELECT r.*, rd.*, m.NOMBRE as medicamento_nombre, m.CONCENTRACION
+                `SELECT r.*, rd.*, m.NOMBRE as medicamento_nombre, m.CONCENTRACION, m.FORMA_FARMACEUTICA
                  FROM RECETAS r
                  LEFT JOIN RECETA_DETALLE rd ON r.ID_RECETA = rd.ID_RECETA
                  LEFT JOIN MEDICAMENTOS m ON rd.ID_MEDICAMENTO = m.ID_MEDICAMENTO
-                 WHERE r.ID_RECETA = ?`,
+                 WHERE r.ID_RECETA = ?
+                 ORDER BY rd.ID_DETALLE`,
                 [result.ID_RECETA]
             );
             
@@ -297,7 +318,9 @@ const consultaModel = {
                     ...receta[0],
                     medicamentos: receta.map(r => ({
                         id_detalle: r.ID_DETALLE,
+                        id_medicamento: r.ID_MEDICAMENTO,
                         medicamento: r.medicamento_nombre,
+                        forma_farmaceutica: r.FORMA_FARMACEUTICA,
                         concentracion: r.CONCENTRACION,
                         dosis: r.DOSIS,
                         frecuencia: r.FRECUENCIA,
@@ -320,23 +343,16 @@ const consultaModel = {
     // Obtener consultas por paciente
     async getByPaciente(dni) {
         const [rows] = await pool.query(
-            `SELECT c.*, e.PA, e.PULSO, e.PESO, e.TALLA, e.IMC, e.SAO2, e.FR, e.TEMPERATURA,
-                    u.NOMBRE as doctor_nombre, u.APELLIDO as doctor_apellido,
-                    (SELECT cie.DESCRIPCION FROM DIAGNOSTICOS_CONSULTA d JOIN CATALOGO_CIE10 cie USING (ID_CIE_10)
-                     WHERE d.ID_CONSULTA = c.ID_CONSULTA
-                     ORDER BY CASE WHEN d.TIPO = 'principal' THEN 0 ELSE 1 END, d.ID_DIAGNOSTICO LIMIT 1) AS DIAGNOSTICO
+            `SELECT c.*, 
+                    u.NOMBRE as doctor_nombre, u.APELLIDO as doctor_apellido
              FROM CONSULTA c
              JOIN FICHA_CLINICA fc ON c.ID_FICHA_CLINICA = fc.ID_FICHA_CLINICA
              LEFT JOIN USUARIOS u ON c.ID_USUARIO = u.ID_USUARIO
-             LEFT JOIN EXAMEN_CLINICO e ON e.ID_CONSULTA = c.ID_CONSULTA
              WHERE fc.DNI = ?
              ORDER BY c.FECHA DESC`,
             [dni]
         );
-        return rows.map(row => ({
-            ...row,
-            EXAMEN_DETALLE: leerCampos(row.EXAMEN_FISICO_DETALLADO)
-        }));
+        return rows;
     }
 };
 

@@ -13,4 +13,8 @@ CREATE TABLE IF NOT EXISTS intentos_login (
     bloqueado_hasta timestamp with time zone
 );
 
+-- Inicio de sesión por correo electrónico
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email varchar(254);
+CREATE UNIQUE INDEX IF NOT EXISTS usuarios_email ON usuarios (lower(email));
+
 COMMIT;

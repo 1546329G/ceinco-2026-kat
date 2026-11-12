@@ -1,9 +1,8 @@
 FROM node:24-bookworm-slim AS build
 WORKDIR /build/frontend
-COPY H_CLINICA/package*.json ./
+COPY frontend/package*.json ./
 RUN npm ci --no-audit --no-fund
-COPY H_CLINICA/ ./
-ENV VITE_API_URL=/api
+COPY frontend/ ./
 RUN npm run build
 
 WORKDIR /build/backend

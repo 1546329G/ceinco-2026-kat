@@ -4,13 +4,16 @@ const consultaController = require('../controllers/consultaController');
 const { verifyToken, verifyRole } = require('../middleware/authMiddleware');
 const fileUpload = require('../middleware/fileUpload');
 const complementos = require('../controllers/consultaComplementosController');
+const { recetaPdf } = require('../controllers/recetaPdfController');
 const { ROLES, ALL_CLINICAL, DOCTOR } = require('../config/roles');
 
 router.use(verifyToken);
 
-router.post('/signos-vitales', verifyRole(ALL_CLINICAL), complementos.registrarSignos);
+// Solo el asistente registra signos vitales; doctor y administrador solo los consultan.
+router.post('/signos-vitales', verifyRole([ROLES.ASISTENTE]), complementos.registrarSignos);
 router.get('/signos-vitales/hoy/:idFicha', verifyRole(ALL_CLINICAL), complementos.signosDeHoy);
 router.post('/:idConsulta/recetas', verifyRole(DOCTOR), consultaController.registrarReceta);
+router.get('/:idConsulta/receta/pdf', verifyRole(ALL_CLINICAL), recetaPdf);
 router.get('/:idConsulta/examen-fisico', verifyRole(DOCTOR), complementos.obtenerExamenFisico);
 router.put('/:idConsulta/examen-fisico', verifyRole(DOCTOR), complementos.guardarExamenFisico);
 router.post('/:idConsulta/diagnosticos', verifyRole(DOCTOR), complementos.agregarDiagnostico);

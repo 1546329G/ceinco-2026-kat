@@ -39,7 +39,9 @@ const fileFilter = (req, file, cb) => {
     if (allowedMimes.includes(file.mimetype)) {
         cb(null, true);
     } else {
-        cb(new Error(`Tipo de archivo no permitido: ${file.mimetype}. Tipos permitidos: imágenes, PDF, Word, Excel, texto.`), false);
+        const error = new Error(`Tipo de archivo no permitido: ${file.mimetype}. Tipos permitidos: imágenes, PDF, Word, Excel, texto.`);
+        error.status = 400;
+        cb(error, false);
     }
 };
 
@@ -51,37 +53,5 @@ const fileUpload = multer({
     },
     fileFilter: fileFilter
 });
-
-const handleUploadErrors = (err, req, res, next) => {
-    if (err instanceof multer.MulterError) {
-        if (err.code === 'LIMIT_FILE_SIZE') {
-            return res.status(400).json({ 
-                error: 'Archivo demasiado grande',
-                message: 'El tamaño máximo permitido es 10MB' 
-            });
-        }
-        if (err.code === 'LIMIT_FILE_COUNT') {
-            return res.status(400).json({ 
-                error: 'Demasiados archivos',
-                message: 'Máximo 5 archivos por petición' 
-            });
-        }
-        if (err.code === 'LIMIT_UNEXPECTED_FILE') {
-            return res.status(400).json({ 
-                error: 'Campo de archivo incorrecto',
-                message: 'El campo del archivo debe llamarse "archivo"' 
-            });
-        }
-    }
-    
-    if (err) {
-        return res.status(400).json({ 
-            error: 'Error al subir archivo',
-            message: err.message 
-        });
-    }
-    
-    next();
-};
 
 module.exports = fileUpload;

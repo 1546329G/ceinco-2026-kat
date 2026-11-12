@@ -2,10 +2,11 @@ const { logActivity, hashDNI } = require('./logActivity');
 const pool = require('../config/database');
 
 const failedAttempts = new Map();
-const MAX_ATTEMPTS = 3;
+const MAX_ATTEMPTS = 10;
 const BLOCK_MINUTES = 5;
 const BLOCK_DURATION_MS = BLOCK_MINUTES * 60 * 1000;
-const useSharedAttempts = process.env.CEINCO_VERCEL_RUNTIME === '1' || process.env.CEINCO_SHARED_LOGIN === '1';
+const { enVercel } = require('../config/runtime');
+const useSharedAttempts = enVercel || process.env.CEINCO_SHARED_LOGIN === '1';
 
 async function checkBlock(dni) {
     const key = hashDNI(dni);

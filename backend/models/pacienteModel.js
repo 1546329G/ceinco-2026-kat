@@ -84,7 +84,7 @@ const pacienteModel = {
     },
 
     // Historia clínica completa
-    async getHistoriaCompleta(dni, soloAntecedentes = false) {
+    async getHistoriaCompleta(dni) {
         const connection = await pool.getConnection();
         try {
             // Datos del paciente
@@ -108,8 +108,6 @@ const pacienteModel = {
                 `SELECT * FROM ANTECEDENTES WHERE ID_FICHA_CLINICA = ?`,
                 [idFicha]
             );
-
-            if (soloAntecedentes) return { ...paciente[0], antecedentes: antecedentes[0] || null };
 
             // Consultas con todos los detalles
             const [consultas] = await connection.query(
@@ -174,9 +172,9 @@ const pacienteModel = {
                 // Exámenes auxiliares
                 const [examenes] = await connection.query(
                     `SELECT * FROM EXAMENES_AUXILIARES 
-                     WHERE ID_CONSULTA = ?
+                     WHERE ID_CONSULTA = ? OR ID_FICHA_CLINICA = ?
                      ORDER BY FECHA_REGISTRO DESC`,
-                    [consulta.ID_CONSULTA]
+                    [consulta.ID_CONSULTA, idFicha]
                 );
                 consulta.examenes_auxiliares = examenes;
             }

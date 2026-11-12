@@ -52,31 +52,14 @@ const citaController = {
         }
     },
 
-    // Iniciar consulta desde cita
-    async iniciarConsulta(req, res) {
-        try {
-            const { idCita } = req.params;
-
-            const result = await citaModel.iniciarConsulta(idCita, req.user.id);
-
-            await logActivity(req.user.dni, 'CONSULTA_INICIADA_DESDE_CITA', {
-                id_cita: idCita,
-                id_consulta: result.idConsulta
-            });
-
-            res.json({
-                message: 'Consulta iniciada exitosamente',
-                id_consulta: result.idConsulta,
-                id_ficha: result.idFicha
-            });
-
-        } catch (error) {
-            if (error.message === 'CITA_NO_DISPONIBLE') {
-                return res.status(400).json({ error: 'La cita no está disponible' });
-            }
-            console.error('Error al iniciar consulta:', error);
-            res.status(500).json({ error: 'Error al iniciar consulta' });
+    async getById(req, res) {
+        const idCita = Number(req.params.idCita);
+        if (!Number.isInteger(idCita) || idCita < 1) {
+            return res.status(400).json({ error: 'ID de cita inválido' });
         }
+        const cita = await citaModel.getById(idCita);
+        if (!cita) return res.status(404).json({ error: 'Cita no encontrada' });
+        res.json(cita);
     },
 
     // Buscar citas

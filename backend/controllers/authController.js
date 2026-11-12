@@ -5,20 +5,22 @@ const usuarioModel = require('../models/usuarioModel');
 const authModel = require('../models/authModel');
 const { logActivity } = require('../middleware/logActivity');
 const { checkBlock, handleFailedAttempt, clearAttempts } = require('../middleware/loginAttempts');
+const validators = require('../utils/validator');
 
 const authController = {
     // Login
     async login(req, res) {
         try {
-            const { dni, contrasena } = req.body;
+            const email = validators.normalizeEmail(req.body.email);
+            const { contrasena } = req.body;
 
             // Validar entrada
-            if (!dni || !contrasena) {
-                return res.status(400).json({ error: 'DNI y contraseña son requeridos' });
+            if (!email || !contrasena) {
+                return res.status(400).json({ error: 'Correo y contraseña son requeridos' });
             }
 
-            // Verificar bloqueo
-            const blockStatus = await checkBlock(dni);
+            // Verificar bloqueo (los intentos se cuentan por correo)
+            const blockStatus = await checkBlock(email);
             if (blockStatus.blocked) {
                 return res.status(429).json({ 
                     error: `Demasiados intentos fallidos. Intente nuevamente en ${blockStatus.remainingTime} minutos.`
@@ -26,14 +28,14 @@ const authController = {
             }
 
             // Buscar usuario
-            const user = await authModel.findByDni(dni);
+            const user = await authModel.findByEmail(email);
             
             if (!user) {
-                return await handleFailedAttempt(dni, res);
+                return await handleFailedAttempt(email, res);
             }
 
             if (user.ESTADO === 0) {
-                await logActivity(dni, 'LOGIN_BLOCKED', { reason: 'Usuario deshabilitado' });
+                await logActivity(user.DNI, 'LOGIN_BLOCKED', { reason: 'Usuario deshabilitado' });
                 return res.status(403).json({ error: 'Usuario deshabilitado. Contacte al administrador.' });
             }
 
@@ -41,11 +43,11 @@ const authController = {
             const validPassword = await bcrypt.compare(contrasena, user.CONTRASENA);
             
             if (!validPassword) {
-                return await handleFailedAttempt(dni, res);
+                return await handleFailedAttempt(email, res);
             }
 
             // Login exitoso - limpiar intentos
-            await clearAttempts(dni);
+            await clearAttempts(email);
 
             // Generar token
             const tokenId = randomUUID();
@@ -64,7 +66,7 @@ const authController = {
             await authModel.updateSessionToken(user.DNI, tokenId);
 
             // Log de éxito
-            await logActivity(dni, 'LOGIN_SUCCESS', { 
+            await logActivity(user.DNI, 'LOGIN_SUCCESS', { 
                 cargo: user.CARGO,
                 timestamp: new Date().toISOString()
             });
@@ -77,6 +79,7 @@ const authController = {
                 user: {
                     id: user.ID_USUARIO,
                     dni: user.DNI,
+                    email: user.EMAIL,
                     nombre: user.NOMBRE,
                     apellido: user.APELLIDO,
                     cargo: user.CARGO
@@ -120,6 +123,7 @@ const authController = {
                 id: user.ID_USUARIO,
                 fecha_creacion: user.FECHA_CREACION,
                 dni: user.DNI,
+                email: user.EMAIL,
                 nombre: user.NOMBRE,
                 apellido: user.APELLIDO,
                 cargo: user.CARGO,
@@ -185,19 +189,25 @@ const authController = {
     async register(req, res) {
         try {
             const { dni, nombre, apellido, cargo, contrasena } = req.body;
+            const email = validators.normalizeEmail(req.body.email);
 
             // Validaciones
-            if (!dni || !nombre || !apellido || !cargo || !contrasena) {
+            if (!dni || !email || !nombre || !apellido || !cargo || !contrasena) {
                 return res.status(400).json({ error: 'Todos los campos son requeridos' });
+            }
+            if (!validators.emailRequerido(email)) {
+                return res.status(400).json({ error: 'Correo electrónico inválido' });
             }
 
             // Verificar si ya existe
-            const existe = await authModel.findByDni(dni);
-            if (existe) {
+            if (await authModel.findByDni(dni)) {
                 return res.status(400).json({ error: 'El DNI ya está registrado' });
             }
+            if (await authModel.findByEmail(email)) {
+                return res.status(400).json({ error: 'El correo ya está registrado' });
+            }
 
-            await usuarioModel.create({ dni, nombre, apellido, cargo, contrasena });
+            await usuarioModel.create({ dni, email, nombre, apellido, cargo, contrasena });
 
             await logActivity(req.user.dni, 'USER_CREATED', { 
                 nuevo_usuario: dni,
@@ -219,6 +229,135 @@ const authController = {
             res.json(users);
         } catch (error) {
             console.error('Error al obtener usuarios:', error);
+            res.status(500).json({ error: 'Error interno del servidor' });
+        }
+    },
+
+    // Asignar o cambiar el correo de inicio de sesión (solo admin)
+    async updateUserEmail(req, res) {
+        try {
+            const { dni } = req.body;
+            const email = validators.normalizeEmail(req.body.email);
+
+            if (!dni || !validators.emailRequerido(email)) {
+                return res.status(400).json({ error: 'DNI y correo electrónico válido son requeridos' });
+            }
+
+            const otro = await authModel.findByEmail(email);
+            if (otro && otro.DNI !== dni) {
+                return res.status(400).json({ error: 'El correo ya está registrado' });
+            }
+
+            if (!await authModel.updateEmail(dni, email)) {
+                return res.status(404).json({ error: 'Usuario no encontrado' });
+            }
+
+            await logActivity(req.user.dni, 'USER_EMAIL_CHANGED', { usuario_afectado: dni });
+            res.json({ message: 'Correo actualizado', email });
+        } catch (error) {
+            console.error('Error al actualizar correo:', error);
+            res.status(500).json({ error: 'Error interno del servidor' });
+        }
+    },
+
+    // Editar usuario: nombre, apellido, cargo y correo (solo admin)
+    async updateUser(req, res) {
+        try {
+            const { dni } = req.params;
+            const email = validators.normalizeEmail(req.body.email);
+            const nombre = typeof req.body.nombre === 'string' ? req.body.nombre.trim() : '';
+            const apellido = typeof req.body.apellido === 'string' ? req.body.apellido.trim() : '';
+            const { cargo } = req.body;
+
+            const { valido, errores } = validators.validateUsuario({ nombre, apellido, cargo }, true);
+            if (!valido) return res.status(400).json({ error: errores.join('. ') });
+            if (!validators.emailRequerido(email)) {
+                return res.status(400).json({ error: 'Correo electrónico inválido' });
+            }
+
+            const usuario = await authModel.findByDni(dni);
+            if (!usuario) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+            if (cargo !== usuario.CARGO) {
+                if (dni === req.user.dni) {
+                    return res.status(400).json({ error: 'No puedes cambiar tu propio cargo' });
+                }
+                if (usuario.CARGO === 'administrador' && !await authModel.countOtherActiveAdmins(dni)) {
+                    return res.status(400).json({ error: 'Debe quedar al menos un administrador activo' });
+                }
+            }
+
+            const otro = await authModel.findByEmail(email);
+            if (otro && otro.DNI !== dni) {
+                return res.status(400).json({ error: 'El correo ya está registrado' });
+            }
+
+            await authModel.updateUser(dni, { nombre, apellido, cargo, email });
+            await logActivity(req.user.dni, 'USER_UPDATED', { usuario_afectado: dni, cargo });
+            res.json({ message: 'Usuario actualizado' });
+        } catch (error) {
+            console.error('Error al actualizar usuario:', error);
+            res.status(500).json({ error: 'Error interno del servidor' });
+        }
+    },
+
+    // Restablecer la contraseña de otro usuario (solo admin)
+    async resetUserPassword(req, res) {
+        try {
+            const { dni } = req.params;
+            const { contrasena } = req.body;
+
+            if (dni === req.user.dni) {
+                return res.status(400).json({ error: 'Cambia tu propia contraseña desde Perfil' });
+            }
+            if (typeof contrasena !== 'string' || contrasena.length < 6) {
+                return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+            }
+
+            const hash = await bcrypt.hash(contrasena, 10);
+            if (!await authModel.changePassword(dni, hash)) {
+                return res.status(404).json({ error: 'Usuario no encontrado' });
+            }
+            // Cierra la sesión activa del usuario para que entre con la nueva contraseña
+            await authModel.updateSessionToken(dni, null);
+            await logActivity(req.user.dni, 'USER_PASSWORD_RESET', { usuario_afectado: dni });
+            res.json({ message: 'Contraseña actualizada' });
+        } catch (error) {
+            console.error('Error al restablecer contraseña:', error);
+            res.status(500).json({ error: 'Error interno del servidor' });
+        }
+    },
+
+    // Eliminar usuario sin registros clínicos (solo admin)
+    async deleteUser(req, res) {
+        try {
+            const { dni } = req.params;
+
+            if (dni === req.user.dni) {
+                return res.status(400).json({ error: 'No puedes eliminar tu propia cuenta' });
+            }
+            const usuario = await authModel.findByDni(dni);
+            if (!usuario) return res.status(404).json({ error: 'Usuario no encontrado' });
+            if (usuario.CARGO === 'administrador' && !await authModel.countOtherActiveAdmins(dni)) {
+                return res.status(400).json({ error: 'Debe quedar al menos un administrador activo' });
+            }
+
+            try {
+                await authModel.deleteUser(dni);
+            } catch (error) {
+                // Tiene citas, consultas, recetas o signos vitales asociados
+                if (error.code === '23503' || error.code === 'ER_ROW_IS_REFERENCED_2' || error.errno === 1451) {
+                    return res.status(409).json({
+                        error: 'El usuario tiene registros clínicos asociados y no se puede eliminar. Deshabilítelo en su lugar.'
+                    });
+                }
+                throw error;
+            }
+
+            await logActivity(req.user.dni, 'USER_DELETED', { usuario_afectado: dni, cargo: usuario.CARGO });
+            res.json({ message: 'Usuario eliminado' });
+        } catch (error) {
+            console.error('Error al eliminar usuario:', error);
             res.status(500).json({ error: 'Error interno del servidor' });
         }
     },

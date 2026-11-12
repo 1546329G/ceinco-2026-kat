@@ -14,7 +14,7 @@ const rolesPermitidos = [ROLES.ADMIN, ROLES.DOCTOR, ROLES.ASISTENTE];
 router.get('/', verifyRole(rolesPermitidos), pacienteController.getAll);
 
 router.get('/:dni/primera-consulta', verifyRole(ALL_CLINICAL), complementos.primeraConsulta);
-router.get('/:dni/antecedentes', verifyRole(DOCTOR), pacienteController.getAntecedentes);
+router.get('/:dni/antecedentes', verifyRole(ALL_CLINICAL), complementos.obtenerAntecedentes);
 router.put('/:dni/antecedentes', verifyRole(DOCTOR), complementos.guardarAntecedentes);
 
 // Registrar paciente
@@ -42,8 +42,8 @@ router.get('/:dni/historia',
 );
 
 // Generar PDF
-router.get('/:dni/pdf',
-    (req, res, next) => verifyRole(req.query.seccion === 'antecedentes' ? DOCTOR : ALL_CLINICAL)(req, res, next),
+router.get('/:dni/pdf', 
+    verifyRole([ROLES.ADMIN, ROLES.DOCTOR]), 
     pacienteController.generatePDF
 );
 

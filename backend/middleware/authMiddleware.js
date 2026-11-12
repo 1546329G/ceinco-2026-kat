@@ -1,8 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { getPool } = require('../config/db');
 
-const rol_valido = ['administrador', 'doctor', 'asistente'];
-
 const verifyToken = async (req, res, next) => {
     const token = req.header('Authorization')?.replace('Bearer ', '');
     
@@ -66,4 +64,4 @@ const verifyRole = (allowedRoles) => {
     };
 };
 
-module.exports = { verifyToken, verifyRole, rol_valido };
+module.exports = { verifyToken, verifyRole };

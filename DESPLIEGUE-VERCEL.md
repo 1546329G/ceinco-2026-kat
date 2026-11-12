@@ -1,6 +1,6 @@
 # CEINCO en Vercel y Neon
 
-Despliega desde la carpeta que contiene `vercel.json`, `api/`, `backend/` y `H_CLINICA/`. El paquete incluye ambos proyectos. En Vercel selecciona **Other** como framework y usa la raíz del paquete como **Root Directory**. La configuración versionada instala ambos proyectos y compila React con Node.js 24. La interfaz llama a `/api` en el mismo dominio.
+El proyecto tiene dos carpetas: `frontend/` (React + Vite) y `backend/` (API Express). `vercel.json` las publica como dos **Vercel Services** en un mismo proyecto: `/api/*` va al backend y el resto al frontend, que llama a `/api` en el mismo dominio. Ambos usan Node.js 24. Despliega desde la carpeta que contiene `vercel.json` con `vercel deploy` (preview) o `vercel deploy --prod`. En local: `npm run dev` en `backend/` (puerto 5000) y en `frontend/` (puerto 3000, con proxy de `/api` al backend).
 
 ## Variables de entorno
 
@@ -16,7 +16,7 @@ Configura estas variables en **Settings → Environment Variables** del proyecto
 | `JWT_SECRET` | Secreto aleatorio para firmar sesiones |
 | `HASH_SALT` | Secreto aleatorio para los hashes de auditoría y los intentos de acceso |
 
-Para generar cada secreto puedes ejecutar `openssl rand -hex 32`. Para que un entorno Preview use datos de prueba separados, configura sus credenciales con una rama independiente de Neon.
+Para generar cada secreto puedes ejecutar `openssl rand -hex 32`. Hoy las variables solo existen en **Production**: un preview arranca, pero sin base de datos. Para probar previews, configura sus credenciales con una rama independiente de Neon.
 
 ## Base de datos
 

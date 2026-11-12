@@ -52,47 +52,19 @@ const citaModel = {
         return rows;
     },
 
-    // Iniciar consulta desde cita
-    async iniciarConsulta(idCita, idUsuario) {
-        const connection = await pool.getConnection();
-        try {
-            await connection.beginTransaction();
-
-            // Verificar cita
-            const [cita] = await connection.query(
-                `SELECT * FROM CITAS WHERE ID_CITAS = ? AND ESTADO = 'programada'`,
-                [idCita]
-            );
-
-            if (cita.length === 0) {
-                throw new Error('CITA_NO_DISPONIBLE');
-            }
-
-            // Crear consulta
-            const [consulta] = await connection.query(
-                `INSERT INTO CONSULTA 
-                 (ID_FICHA_CLINICA, ID_USUARIO, FECHA, ESTADO)
-                 VALUES (?, ?, NOW(), 'pendiente')`,
-                [cita[0].ID_FICHA_CLINICA, idUsuario]
-            );
-
-            // Actualizar cita
-            await connection.query(
-                `UPDATE CITAS SET ESTADO = 'en_consulta' WHERE ID_CITAS = ?`,
-                [idCita]
-            );
-
-            await connection.commit();
-            return {
-                idConsulta: consulta.insertId,
-                idFicha: cita[0].ID_FICHA_CLINICA
-            };
-        } catch (error) {
-            await connection.rollback();
-            throw error;
-        } finally {
-            connection.release();
-        }
+    // Una cita con su paciente y doctor (para iniciar la consulta desde Citas)
+    async getById(idCita) {
+        const [rows] = await pool.query(
+            `SELECT c.*, ${pool.dateOnly('c.FECHA')} AS FECHA,
+                    fc.DNI, fc.NOMBRE_APELLIDO as paciente_nombre, fc.TELEFONO,
+                    u.NOMBRE as doctor_nombre, u.APELLIDO as doctor_apellido
+             FROM CITAS c
+             JOIN FICHA_CLINICA fc ON c.ID_FICHA_CLINICA = fc.ID_FICHA_CLINICA
+             LEFT JOIN USUARIOS u ON c.ID_USUARIO = u.ID_USUARIO
+             WHERE c.ID_CITAS = ?`,
+            [idCita]
+        );
+        return rows[0];
     },
 
     // Buscar citas

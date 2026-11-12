@@ -9,6 +9,12 @@ const seccionesExamen = {
     examenNeurologico: ['motilidad', 'sensibilidad', 'reflejos', 'fuerzaMuscular', 'coordinacion']
 };
 
+function parseJson(value) {
+    if (!value) return null;
+    if (typeof value === 'object') return value;
+    try { return JSON.parse(value); } catch { return null; }
+}
+
 async function cargarFicha(dni) {
     const [[ficha]] = await pool.query(
         `SELECT f.ID_FICHA_CLINICA, a.ID_ANTECEDENTES, a.DATOS_FORMULARIO,
@@ -65,11 +71,39 @@ module.exports = {
 
     async signosDeHoy(req, res) {
         const [[row]] = await pool.query(
-            `SELECT ID_SIGNOS FROM SIGNOS_VITALES_PRECONSULTA
-             WHERE ID_FICHA_CLINICA = ? AND FECHA_REGISTRO >= CURRENT_DATE AND ID_CONSULTA IS NULL
-             ORDER BY FECHA_REGISTRO DESC, ID_SIGNOS DESC LIMIT 1`, [req.params.idFicha]
+            `SELECT s.ID_SIGNOS, s.DATOS, s.FECHA_REGISTRO, u.NOMBRE, u.APELLIDO
+             FROM SIGNOS_VITALES_PRECONSULTA s LEFT JOIN USUARIOS u ON u.ID_USUARIO = s.ID_USUARIO
+             WHERE s.ID_FICHA_CLINICA = ? AND s.FECHA_REGISTRO >= CURRENT_DATE AND s.ID_CONSULTA IS NULL
+             ORDER BY s.FECHA_REGISTRO DESC, s.ID_SIGNOS DESC LIMIT 1`, [req.params.idFicha]
         );
-        res.json({ tieneSignosVitalesHoy: Boolean(row), idExamenClinico: row?.ID_SIGNOS ?? null });
+        res.json({
+            tieneSignosVitalesHoy: Boolean(row),
+            idExamenClinico: row?.ID_SIGNOS ?? null,
+            signos: row ? {
+                ...parseJson(row.DATOS),
+                fechaRegistro: row.FECHA_REGISTRO,
+                registradoPor: [row.NOMBRE, row.APELLIDO].filter(Boolean).join(' ') || null
+            } : null
+        });
+    },
+
+    async obtenerAntecedentes(req, res) {
+        const [[row]] = await pool.query(
+            `SELECT a.*, f.ID_FICHA_CLINICA AS ficha
+             FROM FICHA_CLINICA f LEFT JOIN ANTECEDENTES a ON a.ID_FICHA_CLINICA = f.ID_FICHA_CLINICA
+             WHERE f.DNI = ?`, [req.params.dni]
+        );
+        if (!row) return res.status(404).json({ error: 'Paciente no encontrado' });
+        if (!row.ID_ANTECEDENTES) return res.json({ tieneAntecedentes: false, datos: null, registrosPrevios: {} });
+        // Antecedentes migrados del sistema anterior: columnas de texto libre.
+        const registrosPrevios = Object.fromEntries(Object.entries(row).filter(([campo, valor]) =>
+            campo.startsWith('ANTECEDENTES_') && typeof valor === 'string' && valor.trim()));
+        res.json({
+            tieneAntecedentes: true,
+            datos: parseJson(row.DATOS_FORMULARIO),
+            registrosPrevios,
+            fechaRegistro: row.FECHA_REGISTRO ?? null
+        });
     },
 
     async obtenerExamenFisico(req, res) {

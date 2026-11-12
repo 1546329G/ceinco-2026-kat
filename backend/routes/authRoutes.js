@@ -25,10 +25,34 @@ router.get('/users',
     authController.getAllUsers
 );
 
+router.put('/users/email',
+    verifyToken,
+    verifyRole([ROLES.ADMIN]),
+    authController.updateUserEmail
+);
+
 router.put('/users/toggle-status', 
     verifyToken, 
     verifyRole([ROLES.ADMIN]), 
     authController.toggleUserStatus
+);
+
+router.put('/users/:dni/password',
+    verifyToken,
+    verifyRole([ROLES.ADMIN]),
+    authController.resetUserPassword
+);
+
+router.put('/users/:dni',
+    verifyToken,
+    verifyRole([ROLES.ADMIN]),
+    authController.updateUser
+);
+
+router.delete('/users/:dni',
+    verifyToken,
+    verifyRole([ROLES.ADMIN]),
+    authController.deleteUser
 );
 
 module.exports = router;

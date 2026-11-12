@@ -1,6 +1,12 @@
-.env*
-node_modules/
-dist/
-.vercel/
+# Herramientas, respaldos, credenciales y datos locales (NUNCA subir)
 .ceinco-runtime/
+.vercel/
+.env
+.env.*
+
+# Dependencias, compilados y archivos generados
+node_modules/
+frontend/dist/
 backend/uploads/
+*.log
+.DS_Store

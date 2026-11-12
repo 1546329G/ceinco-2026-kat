@@ -79,4 +79,4 @@ function createPostgresPool() {
     };
 }
 
-module.exports = { createPostgresPool };
+module.exports = { createPostgresPool, formatQuery };

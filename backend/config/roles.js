@@ -9,6 +9,5 @@ module.exports = {
     ASISTENTE: [ROLES.ASISTENTE, ROLES.ADMIN],
     DOCTOR: [ROLES.DOCTOR, ROLES.ADMIN],
     ADMIN: [ROLES.ADMIN],
-    ALL_CLINICAL: Object.values(ROLES),
-    ALL_AUTH: Object.values(ROLES)
+    ALL_CLINICAL: Object.values(ROLES)
 };

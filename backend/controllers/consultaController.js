@@ -1,17 +1,24 @@
 const consultaModel = require('../models/consultaModel');
+const catalogoModel = require('../models/catalogoModel');
 const { logActivity } = require('../middleware/logActivity');
 const pool = require('../config/database');
 const { randomUUID } = require('node:crypto');
 
 const consultaController = {
     async registrarReceta(req, res) {
-        const { indicaciones, medicamentos } = req.body;
-        if (!Array.isArray(medicamentos) || !medicamentos.length ||
+        const { medicamentos } = req.body;
+        if (!Array.isArray(medicamentos) || !medicamentos.length || medicamentos.length > 20 ||
             medicamentos.some(med => !med || !Number.isInteger(med.id_medicamento) || med.id_medicamento < 1)) {
             return res.status(400).json({ error: 'Seleccione medicamentos del catálogo' });
         }
+        const texto = (valor, max) => (typeof valor === 'string' && valor.trim() ? valor.trim().slice(0, max) : null);
+        const indicaciones = texto(req.body.indicaciones, 4000);
+        const lineas = medicamentos.map(med => ({
+            id_medicamento: med.id_medicamento,
+            dosis: texto(med.dosis, 100), frecuencia: texto(med.frecuencia, 100), duracion: texto(med.duracion, 100)
+        }));
         try {
-            const idReceta = await consultaModel.registrarReceta(req.params.idConsulta, req.user.id, { indicaciones, medicamentos });
+            const idReceta = await consultaModel.registrarReceta(req.params.idConsulta, req.user.id, { indicaciones, medicamentos: lineas });
             if (!idReceta) return res.status(404).json({ error: 'Consulta no encontrada' });
             await logActivity(req.user.dni, 'RECETA_REGISTRADA', { idReceta });
             res.status(201).json({ message: 'Receta registrada', idReceta });
@@ -83,25 +90,11 @@ const consultaController = {
         try {
             const { q } = req.query;
             
-            if (!q || q.length < 2) {
+            if (typeof q !== 'string' || q.length < 2) {
                 return res.status(400).json({ error: 'Ingrese al menos 2 caracteres' });
             }
 
-            const [rows] = await pool.query(
-                `SELECT ID_CIE_10, CODIGO, DESCRIPCION 
-                 FROM CATALOGO_CIE10 
-                 WHERE ACTIVO = 1 AND (LOWER(CODIGO) LIKE LOWER(?) OR LOWER(DESCRIPCION) LIKE LOWER(?))
-                 ORDER BY 
-                     CASE 
-                         WHEN CODIGO = ? THEN 1
-                         WHEN LOWER(CODIGO) LIKE LOWER(?) THEN 2
-                         ELSE 3
-                     END
-                 LIMIT 20`,
-                [`%${q}%`, `%${q}%`, q, `${q}%`]
-            );
-
-            res.json(rows);
+            res.json(await catalogoModel.searchCIE10(q));
 
         } catch (error) {
             console.error('Error al buscar CIE10:', error);

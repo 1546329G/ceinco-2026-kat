@@ -24,18 +24,13 @@ router.get('/search',
     citaController.search
 );
 
-// Iniciar consulta desde cita
-router.post('/:idCita/iniciar-consulta', 
-    verifyRole([ROLES.ADMIN, ROLES.DOCTOR]), 
-    citaController.iniciarConsulta
-);
-
 // Cancelar cita
 router.patch('/:idCita/cancelar', 
     verifyRole([ROLES.ADMIN, ROLES.ASISTENTE]), 
     citaController.cancelar
 );
 
+router.get('/:idCita', verifyRole([ROLES.ADMIN, ROLES.DOCTOR, ROLES.ASISTENTE]), citaController.getById);
 router.put('/:idCita', verifyRole(ASISTENTE), citaController.update);
 router.patch('/:idCita/atender', verifyRole(DOCTOR), citaController.atender);
 router.delete('/:idCita', verifyRole(ASISTENTE), citaController.eliminarCancelada);
